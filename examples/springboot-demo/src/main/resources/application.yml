@@ -1,0 +1,42 @@
+server:
+  port: 8080
+
+# 统一 Demo 模式
+# auth: permanent | temporary | camrole
+# pool: jdbc | hikari | druid | dbcp
+demo:
+  mode:
+    auth: permanent
+    pool: jdbc
+
+# SSM 配置（按认证模式填写对应参数）
+ssm:
+  region: ap-guangzhou
+  secret-name: your-secret-name
+  watch-interval-ms: 10000
+
+  db:
+    ip: 127.0.0.1
+    port: 3306
+    name: your_database
+
+  # permanent 模式（不推荐生产使用）
+  secret-id: ${SSM_SECRET_ID:your-secret-id}
+  secret-key: ${SSM_SECRET_KEY:your-secret-key}
+
+  # temporary 模式
+  tmp-secret-id: ${TMP_SECRET_ID:your-tmp-secret-id}
+  tmp-secret-key: ${TMP_SECRET_KEY:your-tmp-secret-key}
+  tmp-token: ${TMP_TOKEN:your-tmp-token}
+
+  # camrole 模式（推荐）
+  cam-role-name: your-cam-role-name
+
+# 连接池参数（hikari / druid / dbcp 复用）
+pool:
+  max-size: 20
+  min-idle: 5
+
+logging:
+  level:
+    com.tencentcloudapi.ssm: DEBUG
