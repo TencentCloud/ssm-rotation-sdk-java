@@ -292,6 +292,17 @@
                 </configuration>
             </plugin>
 
+            <!-- Surefire 插件 - 单元测试执行 -->
+            <!-- argLine 由 Maven profile 按 JDK 版本动态注入，解决 JDK 16+ 强封装导致 Mockito 无法 mock 的问题 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+                <configuration>
+                    <argLine>${surefire.argLine}</argLine>
+                </configuration>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -331,6 +342,32 @@
     </reporting>
 
     <profiles>
+        <!-- JDK 8~15：不需要额外 JVM 参数 -->
+        <profile>
+            <id>jdk-below-16</id>
+            <activation>
+                <jdk>[1.8,16)</jdk>
+            </activation>
+            <properties>
+                <surefire.argLine/>
+            </properties>
+        </profile>
+
+        <!-- JDK 16+：Mockito inline mock 需要 add-opens 绕过强封装 -->
+        <profile>
+            <id>jdk-16-plus</id>
+            <activation>
+                <jdk>[16,)</jdk>
+            </activation>
+            <properties>
+                <surefire.argLine>
+                    --add-opens java.base/java.lang=ALL-UNNAMED
+                    --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+                    --add-opens java.base/java.util=ALL-UNNAMED
+                </surefire.argLine>
+            </properties>
+        </profile>
+
         <profile>
             <id>release</id>
             <build>
