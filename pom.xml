@@ -62,6 +62,7 @@
         <maven.enforcer.plugin.version>3.5.0</maven.enforcer.plugin.version>
         <nexus-staging-maven-plugin.version>1.7.0</nexus-staging-maven-plugin.version>
         <maven-gpg-plugin.version>3.2.7</maven-gpg-plugin.version>
+        <byte-buddy.version>1.14.18</byte-buddy.version>
     </properties>
 
     <dependencies>
@@ -175,6 +176,21 @@
             <groupId>org.mockito</groupId>
             <artifactId>mockito-inline</artifactId>
             <version>4.11.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- 显式升级 ByteBuddy 版本，解决 Mockito 4.11.0 自带的 ByteBuddy 1.12.x 不支持 JDK 21 的问题 -->
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+            <version>${byte-buddy.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-agent</artifactId>
+            <version>${byte-buddy.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
