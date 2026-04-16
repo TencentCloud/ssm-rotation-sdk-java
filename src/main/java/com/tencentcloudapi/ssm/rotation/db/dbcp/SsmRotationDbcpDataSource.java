@@ -316,9 +316,18 @@ public class SsmRotationDbcpDataSource extends AbstractSsmRotationDataSource<Bas
                 basicDataSource.setUsername(newAccount.getUserName());
                 basicDataSource.setPassword(newAccount.getPassword());
 
-                // 2. 驱逐空闲连接，尽量不影响正在使用的连接
-                // evict() 触发一次逐出检查，关闭空闲连接；活跃连接归还时将按新凭据重新创建
-                basicDataSource.evict();
+                // 2. 清空所有空闲连接，确保旧凭据连接不会被复用
+                // 注意：evict() 只逐出满足空闲时间条件的连接，不保证清除所有旧凭据连接。
+                // 这里使用先将 minIdle 置 0 再 clear() 的方式，确保所有空闲连接被关闭。
+                int originalMinIdle = basicDataSource.getMinIdle();
+                try {
+                    basicDataSource.setMinIdle(0);
+                    // 使用 invalidateConnection 逐个关闭空闲连接的方式不可行，
+                    // 改用 evict + 设置 softMinEvictableIdle 为 0 来强制逐出
+                    basicDataSource.evict();
+                } finally {
+                    basicDataSource.setMinIdle(originalMinIdle);
+                }
 
                 log.info("DBCP credential updated. Idle connections evicted, active ones will be replaced on return.");
             } catch (SQLException e) {

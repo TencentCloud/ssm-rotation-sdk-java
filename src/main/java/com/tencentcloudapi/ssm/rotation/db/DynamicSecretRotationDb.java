@@ -153,11 +153,23 @@ public class DynamicSecretRotationDb implements AutoCloseable {
         }
 
         // 初始获取凭据
-        this.currentAccount = fetchAccount();
+        try {
+            this.currentAccount = fetchAccount();
+        } catch (SsmRotationException e) {
+            // 构造函数失败，清理已创建的线程池资源
+            closeCredentialChangeExecutorQuietly();
+            throw e;
+        }
         log.info("Initialized with account: {}", currentAccount.getUserName());
 
         // 启动凭据监控
-        startWatcher();
+        try {
+            startWatcher();
+        } catch (SsmRotationException e) {
+            // 构造函数失败，清理已创建的线程池资源
+            closeCredentialChangeExecutorQuietly();
+            throw e;
+        }
     }
 
     /**
@@ -176,10 +188,8 @@ public class DynamicSecretRotationDb implements AutoCloseable {
             throw new SQLException("DynamicSecretRotationDb is closed");
         }
         
-        DbAccount account;
-        synchronized (credentialLock) {
-            account = this.currentAccount;
-        }
+        // currentAccount 是 volatile 字段，直接读取即可保证可见性
+        DbAccount account = this.currentAccount;
         
         try {
             return createConnection(account);
@@ -622,6 +632,8 @@ public class DynamicSecretRotationDb implements AutoCloseable {
                 if (!closed) {
                     log.warn("CredentialChangeExecutor rejected callback, fallback to current thread: {}", e.getMessage());
                     callback.run();
+                } else {
+                    log.info("CredentialChangeExecutor rejected callback during shutdown, skipping listener notification");
                 }
             }
         }
@@ -644,5 +656,18 @@ public class DynamicSecretRotationDb implements AutoCloseable {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 静默关闭 credentialChangeExecutor（用于构造函数失败时的资源清理）
+     */
+    private void closeCredentialChangeExecutorQuietly() {
+        if (ownsCredentialChangeExecutor && credentialChangeExecutor != null
+                && !credentialChangeExecutor.isShutdown()) {
+            try {
+                credentialChangeExecutor.shutdownNow();
+            } catch (Exception ignored) {
+            }
+        }
     }
 }

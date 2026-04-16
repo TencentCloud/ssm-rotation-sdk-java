@@ -16,6 +16,7 @@
 
 package com.tencentcloudapi.ssm.rotation.db.druid;
 
+import com.alibaba.druid.pool.DruidAbstractDataSource;
 import com.alibaba.druid.pool.DruidDataSource;
 import com.tencentcloudapi.ssm.rotation.SsmRotationException;
 import com.tencentcloudapi.ssm.rotation.config.DynamicSecretRotationConfig;
@@ -26,6 +27,7 @@ import com.tencentcloudapi.ssm.rotation.ssm.DbAccount;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.sql.DataSource;
+import java.lang.reflect.Field;
 import java.sql.SQLException;
 
 /**
@@ -298,6 +300,10 @@ public class SsmRotationDruidDataSource extends AbstractSsmRotationDataSource<Dr
             } catch (SQLException e) {
                 // 初始化失败，清理资源
                 rotationDb.close();
+                try {
+                    druid.close();
+                } catch (Exception ignored) {
+                }
                 throw new SsmRotationException(SsmRotationException.ERROR_CONFIG,
                         "Failed to initialize DruidDataSource: " + e.getMessage(), e);
             }
@@ -333,8 +339,9 @@ public class SsmRotationDruidDataSource extends AbstractSsmRotationDataSource<Dr
                     oldAccount.getUserName(), newAccount.getUserName());
 
             // 1. 更新 Druid 的用户名和密码
-            druidDataSource.setUsername(newAccount.getUserName());
-            druidDataSource.setPassword(newAccount.getPassword());
+            // 注意：Druid 在 init() 后，setUsername() 会抛出 UnsupportedOperationException，
+            // 需要通过反射绕过 inited 检查直接修改底层字段
+            updateDruidCredential(druidDataSource, newAccount.getUserName(), newAccount.getPassword());
 
             // 2. 软淘汰旧连接
             // 说明：仅调用 shrink(true, true) 时，<= minIdle 的空闲连接可能保留，
@@ -363,6 +370,34 @@ public class SsmRotationDruidDataSource extends AbstractSsmRotationDataSource<Dr
                     log.warn("Failed to restore Druid minIdle after credential rotation: {}", e.getMessage(), e);
                 }
             }
+        }
+        /**
+         * 通过反射更新 Druid 的用户名和密码，绕过 init() 后的限制
+         *
+         * <p>Druid 的 {@code DruidAbstractDataSource.setUsername()} 在 {@code inited=true} 后，
+         * 如果新值与旧值不同会抛出 {@code UnsupportedOperationException}。
+         * 而 {@code setPassword()} 在 {@code inited=true} 后仅打印日志并正常赋值。
+         * 为保持一致性和兼容性，username 通过反射修改，password 直接调用 setter。</p>
+         */
+        private static void updateDruidCredential(DruidDataSource dataSource, String username, String password) {
+            // 更新 username：通过反射绕过 inited 检查
+            try {
+                Field usernameField = DruidAbstractDataSource.class.getDeclaredField("username");
+                usernameField.setAccessible(true);
+                usernameField.set(dataSource, username);
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                // 反射失败时回退到直接调用（兼容未来 Druid 版本可能移除限制的情况）
+                log.warn("Failed to update Druid username via reflection, falling back to setter: {}", e.getMessage());
+                try {
+                    dataSource.setUsername(username);
+                } catch (Exception ex) {
+                    log.error("Failed to update Druid username: {}", ex.getMessage(), ex);
+                    throw new RuntimeException("Failed to update Druid username after credential rotation", ex);
+                }
+            }
+
+            // 更新 password：Druid 允许 init 后直接调用 setPassword
+            dataSource.setPassword(password);
         }
     }
 }

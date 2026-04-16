@@ -205,9 +205,22 @@ public final class SsmRotationQuickStart {
 
         public Map<String, DataSource> build() throws SsmRotationException {
             Map<String, DataSource> result = new LinkedHashMap<>();
-            for (Map.Entry<String, SsmRotationDataSourceOptions> entry : optionsByName.entrySet()) {
-                result.put(entry.getKey(),
-                        SsmRotationDataSourceFactory.createDataSource(entry.getValue()));
+            try {
+                for (Map.Entry<String, SsmRotationDataSourceOptions> entry : optionsByName.entrySet()) {
+                    result.put(entry.getKey(),
+                            SsmRotationDataSourceFactory.createDataSource(entry.getValue()));
+                }
+            } catch (SsmRotationException e) {
+                // 部分数据源创建失败，清理已创建的数据源，防止资源泄漏
+                for (DataSource ds : result.values()) {
+                    if (ds instanceof AutoCloseable) {
+                        try {
+                            ((AutoCloseable) ds).close();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+                throw e;
             }
             return Collections.unmodifiableMap(result);
         }
