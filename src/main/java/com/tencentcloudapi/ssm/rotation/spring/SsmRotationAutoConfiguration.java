@@ -73,21 +73,37 @@ public class SsmRotationAutoConfiguration {
         String primaryKey = null;
         Map<String, DataSource> dataSourceMap = new LinkedHashMap<>();
 
-        for (Map.Entry<String, SsmRotationProperties.DataSourceProperties> entry : properties.getDatasources().entrySet()) {
-            String key = entry.getKey();
-            SsmRotationProperties.DataSourceProperties value = entry.getValue();
-            if (value == null) {
-                throw new BeanCreationException("ssm.rotation.datasources." + key + " cannot be null");
-            }
+        try {
+            for (Map.Entry<String, SsmRotationProperties.DataSourceProperties> entry : properties.getDatasources().entrySet()) {
+                String key = entry.getKey();
+                SsmRotationProperties.DataSourceProperties value = entry.getValue();
+                if (value == null) {
+                    throw new BeanCreationException("ssm.rotation.datasources." + key + " cannot be null");
+                }
 
-            boolean primary = Boolean.TRUE.equals(value.getPrimary());
-            if (primary) {
-                primaryCount++;
-                primaryKey = key;
-            }
+                boolean primary = Boolean.TRUE.equals(value.getPrimary());
+                if (primary) {
+                    primaryCount++;
+                    primaryKey = key;
+                }
 
-            SsmRotationDataSourceOptions options = toOptions(properties, value);
-            dataSourceMap.put(key, SsmRotationDataSourceFactory.createDataSource(options));
+                SsmRotationDataSourceOptions options = toOptions(properties, value);
+                dataSourceMap.put(key, SsmRotationDataSourceFactory.createDataSource(options));
+            }
+        } catch (Exception e) {
+            // 部分数据源创建失败，清理已创建的数据源，防止资源泄漏
+            for (DataSource ds : dataSourceMap.values()) {
+                if (ds instanceof AutoCloseable) {
+                    try {
+                        ((AutoCloseable) ds).close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            if (e instanceof SsmRotationException) {
+                throw (SsmRotationException) e;
+            }
+            throw e;
         }
 
         if (primaryCount != 1) {

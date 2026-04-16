@@ -222,7 +222,7 @@ public class SsmRotationHikariDataSource extends AbstractSsmRotationDataSource<H
             hikariConfig.setPassword(initialAccount.getPassword());
 
             // 4. 创建 HikariDataSource
-            HikariDataSource hikariDataSource;
+            HikariDataSource hikariDataSource = null;
             try {
                 hikariDataSource = new HikariDataSource(hikariConfig);
                 log.info("HikariDataSource initialized, url={}, username={}, maxPoolSize={}, minIdle={}",
@@ -230,6 +230,13 @@ public class SsmRotationHikariDataSource extends AbstractSsmRotationDataSource<H
                         hikariDataSource.getMaximumPoolSize(), hikariDataSource.getMinimumIdle());
             } catch (Exception e) {
                 rotationDb.close();
+                // HikariDataSource 构造函数内部可能已部分初始化，需要清理
+                try {
+                    if (hikariDataSource != null) {
+                        hikariDataSource.close();
+                    }
+                } catch (Exception ignored) {
+                }
                 throw new SsmRotationException(SsmRotationException.ERROR_CONFIG,
                         "Failed to initialize HikariDataSource: " + e.getMessage(), e);
             }

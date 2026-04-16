@@ -5,6 +5,17 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] - 2026-04-16
+
+### 修复
+
+- **多数据源部分失败资源泄漏**：`SsmRotationQuickStart.MultiBuilder.build()` 和 `SsmRotationAutoConfiguration` 创建多数据源时，若中途某个数据源创建失败，已创建的数据源（含 Watcher 线程和连接池）现在会被正确关闭，防止线程泄漏
+- **构造函数失败线程泄漏**：`DynamicSecretRotationDb` 构造函数中 `fetchAccount()` 或 `startWatcher()` 失败时，`credentialChangeExecutor` 线程池现在会被正确关闭
+- **关闭时凭据变更回调静默丢弃**：`DynamicSecretRotationDb.notifyCredentialChanged()` 在 SDK 关闭后收到凭据变更时，增加 `log.info` 日志记录，便于排查问题
+- **DBCP evict 不彻底**：`SsmRotationDbcpDataSource` 凭据轮转时 `evict()` 仅逐出满足空闲时间条件的连接，现改为先将 `minIdle` 临时置 0 再 evict，确保所有旧凭据空闲连接被清除
+- **getConnection 多余锁竞争**：`DynamicSecretRotationDb.getConnection()` 移除多余的 `synchronized(credentialLock)`，`currentAccount` 为 volatile 字段，直接读取即可保证可见性
+- **Druid Spring Boot Starter 兼容**：修复 `druid-spring-boot-starter` 场景下 `DruidAbstractDataSource.setUsername()` 抛出 `UnsupportedOperationException` 的问题，改用反射方式设置用户名和密码
+
 ## [1.0.0] - 2026-04-02
 
 首次发布。
