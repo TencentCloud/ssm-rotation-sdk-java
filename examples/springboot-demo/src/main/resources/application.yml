@@ -7,7 +7,7 @@ server:
 demo:
   mode:
     auth: permanent
-    pool: jdbc
+    pool: druid
 
 # SSM 配置（按认证模式填写对应参数）
 ssm:
@@ -36,6 +36,25 @@ ssm:
 pool:
   max-size: 20
   min-idle: 5
+
+# Druid 连接池参数（仅 pool=druid 时生效）
+# 以下为 SDK 默认值，可根据实际情况调整
+druid:
+  initial-size: 5                              # 初始连接数
+  max-wait: 60000                              # 获取连接最大等待时间（毫秒）
+  time-between-eviction-runs-millis: 60000     # 空闲检测线程运行间隔（毫秒）
+  min-evictable-idle-time-millis: 300000       # 连接最小空闲时间，超过后可被淘汰（毫秒）
+  validation-query: SELECT 1                   # 连接有效性验证 SQL
+  test-while-idle: true                        # 空闲时检测连接有效性（推荐开启）
+  test-on-borrow: false                        # 获取连接时检测有效性（开启会有性能损耗）
+  test-on-return: false                        # 归还连接时检测有效性
+  keep-alive: true                             # 开启连接保活（防止 MySQL wait_timeout 断连，推荐开启）
+  keep-alive-between-time-millis: 120000       # 保活检测间隔（毫秒），需小于 MySQL wait_timeout
+  # 以下为 Druid 原生参数，SDK 未显式暴露但支持直接平级配置，无需 extra-properties 层级
+  # max-evictable-idle-time-millis: 900000     # 连接最大空闲时间
+  # phy-timeout-millis: 0                      # 物理连接超时时间
+  # remove-abandoned: true                     # 是否回收泄露连接
+  # remove-abandoned-timeout-millis: 300000    # 泄露连接回收超时时间
 
 logging:
   level:

@@ -22,6 +22,7 @@ import com.tencentcloudapi.ssm.rotation.config.DynamicSecretRotationConfig;
 import com.tencentcloudapi.ssm.rotation.db.AbstractSsmRotationDataSource;
 import com.tencentcloudapi.ssm.rotation.db.CredentialChangeListener;
 import com.tencentcloudapi.ssm.rotation.db.DynamicSecretRotationDb;
+import com.tencentcloudapi.ssm.rotation.db.ExtraPropertiesApplier;
 import com.tencentcloudapi.ssm.rotation.ssm.DbAccount;
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,6 +30,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Map;
 
 /**
  * 基于 Apache Commons DBCP2 连接池的 SSM 凭据轮转数据源
@@ -111,10 +113,16 @@ public class SsmRotationDbcpDataSource extends AbstractSsmRotationDataSource<Bas
         private long maxWaitMillis = 60000;
         private long timeBetweenEvictionRunsMillis = 60000;
         private long minEvictableIdleTimeMillis = 300000;
+        private long softMinEvictableIdleTimeMillis = 120000;
         private String validationQuery = "SELECT 1";
         private boolean testWhileIdle = true;
-        private boolean testOnBorrow = false;
+        private boolean testOnBorrow = true;
         private boolean testOnReturn = false;
+
+        /**
+         * 扩展属性：用于设置 SDK 未显式暴露的 DBCP 原生参数
+         */
+        private java.util.Map<String, Object> extraProperties;
 
         /**
          * 高级模式：用户自定义的 BasicDataSource
@@ -176,9 +184,25 @@ public class SsmRotationDbcpDataSource extends AbstractSsmRotationDataSource<Bas
 
         /**
          * 设置连接最小空闲时间（毫秒），默认 300000
+         * 
+         * <p>超过此时间的多余空闲连接（超出 minIdle 部分）会被淘汰。</p>
          */
         public Builder minEvictableIdleTimeMillis(long minEvictableIdleTimeMillis) {
             this.minEvictableIdleTimeMillis = minEvictableIdleTimeMillis;
+            return this;
+        }
+
+        /**
+         * 设置 minIdle 以内连接的最小空闲时间（毫秒），默认 120000（2分钟）
+         * 
+         * <p>与 minEvictableIdleTimeMillis 不同，此参数作用于 minIdle 以内的连接。
+         * 当连接空闲超过此时间后，空闲检测线程会对其进行有效性检测（需配合 testWhileIdle=true），
+         * 无效连接会被淘汰并重建，从而防止 MySQL wait_timeout 超时导致连接被服务端断开。</p>
+         * 
+         * <p>建议设置为小于 MySQL wait_timeout 的值（MySQL 默认 wait_timeout=28800秒=8小时）。</p>
+         */
+        public Builder softMinEvictableIdleTimeMillis(long softMinEvictableIdleTimeMillis) {
+            this.softMinEvictableIdleTimeMillis = softMinEvictableIdleTimeMillis;
             return this;
         }
 
@@ -199,7 +223,11 @@ public class SsmRotationDbcpDataSource extends AbstractSsmRotationDataSource<Bas
         }
 
         /**
-         * 设置获取连接时是否检测有效性，默认 false
+         * 设置获取连接时是否检测有效性，默认 true
+         * 
+         * <p>开启后，每次从连接池获取连接时会先执行 validationQuery 检测连接有效性。
+         * 虽然有少量性能开销，但可以有效避免获取到已被 MySQL 服务端断开的无效连接，
+         * 是防止 CommunicationsException 的最后一道防线。</p>
          */
         public Builder testOnBorrow(boolean testOnBorrow) {
             this.testOnBorrow = testOnBorrow;
@@ -211,6 +239,17 @@ public class SsmRotationDbcpDataSource extends AbstractSsmRotationDataSource<Bas
          */
         public Builder testOnReturn(boolean testOnReturn) {
             this.testOnReturn = testOnReturn;
+            return this;
+        }
+
+        /**
+         * 设置扩展属性，用于配置 SDK 未显式暴露的 DBCP 原生参数
+         *
+         * <p>通过此方法可以设置任意 DBCP 支持的参数，无需等待 SDK 升级。
+         * 例如：numTestsPerEvictionRun、logAbandoned、removeAbandonedTimeout 等。</p>
+         */
+        public Builder extraProperties(java.util.Map<String, Object> extraProperties) {
+            this.extraProperties = extraProperties;
             return this;
         }
 
@@ -250,10 +289,14 @@ public class SsmRotationDbcpDataSource extends AbstractSsmRotationDataSource<Bas
                 dbcp.setMaxWait(Duration.ofMillis(maxWaitMillis));
                 dbcp.setDurationBetweenEvictionRuns(Duration.ofMillis(timeBetweenEvictionRunsMillis));
                 dbcp.setMinEvictableIdle(Duration.ofMillis(minEvictableIdleTimeMillis));
+                dbcp.setSoftMinEvictableIdle(Duration.ofMillis(softMinEvictableIdleTimeMillis));
                 dbcp.setValidationQuery(validationQuery);
                 dbcp.setTestWhileIdle(testWhileIdle);
                 dbcp.setTestOnBorrow(testOnBorrow);
                 dbcp.setTestOnReturn(testOnReturn);
+
+                // 应用扩展属性：通过反射调用 DBCP 原生 setter，支持用户配置 SDK 未显式暴露的参数
+                ExtraPropertiesApplier.apply(dbcp, extraProperties);
             }
 
             // 设置连接信息
@@ -312,9 +355,9 @@ public class SsmRotationDbcpDataSource extends AbstractSsmRotationDataSource<Bas
                 log.info("DBCP pool status before credential update: active={}, idle={}",
                         numActive, numIdle);
 
-                // 1. 更新凭据
-                basicDataSource.setUsername(newAccount.getUserName());
+                // 1. 更新凭据（先 password 后 username，缩短非原子更新的不一致窗口）
                 basicDataSource.setPassword(newAccount.getPassword());
+                basicDataSource.setUsername(newAccount.getUserName());
 
                 // 2. 清空所有空闲连接，确保旧凭据连接不会被复用
                 // 注意：evict() 只逐出满足空闲时间条件的连接，不保证清除所有旧凭据连接。
@@ -334,8 +377,9 @@ public class SsmRotationDbcpDataSource extends AbstractSsmRotationDataSource<Bas
                 log.warn("Error during DBCP credential update: {}", e.getMessage(), e);
                 log.info("Credentials have been updated. New connections will use new credentials.");
             } catch (Exception e) {
-                log.warn("Unexpected error during DBCP credential update: {}", e.getMessage(), e);
+            log.warn("Unexpected error during DBCP credential update: {}", e.getMessage(), e);
             }
         }
     }
+
 }

@@ -100,6 +100,38 @@ public class UnifiedDemoApplication {
     @Value("${pool.min-idle:5}")
     private int poolMinIdle;
 
+    // ==================== Druid 连接池参数（仅 pool=druid 时生效） ====================
+
+    @Value("${druid.initial-size:5}")
+    private int druidInitialSize;
+
+    @Value("${druid.max-wait:60000}")
+    private long druidMaxWait;
+
+    @Value("${druid.time-between-eviction-runs-millis:60000}")
+    private long druidTimeBetweenEvictionRunsMillis;
+
+    @Value("${druid.min-evictable-idle-time-millis:300000}")
+    private long druidMinEvictableIdleTimeMillis;
+
+    @Value("${druid.validation-query:SELECT 1}")
+    private String druidValidationQuery;
+
+    @Value("${druid.test-while-idle:true}")
+    private boolean druidTestWhileIdle;
+
+    @Value("${druid.test-on-borrow:false}")
+    private boolean druidTestOnBorrow;
+
+    @Value("${druid.test-on-return:false}")
+    private boolean druidTestOnReturn;
+
+    @Value("${druid.keep-alive:true}")
+    private boolean druidKeepAlive;
+
+    @Value("${druid.keep-alive-between-time-millis:120000}")
+    private long druidKeepAliveBetweenTimeMillis;
+
     private DemoRuntime runtime;
 
     public static void main(String[] args) {
@@ -154,10 +186,21 @@ public class UnifiedDemoApplication {
         }
 
         if ("druid".equals(normalizedPoolMode)) {
+            // 所有 Druid 连接池参数均从 application.yml 中读取，用户只需修改配置文件即可调整连接池行为
             SsmRotationDruidDataSource ds = SsmRotationDruidDataSource.builder()
                     .rotationConfig(config)
                     .maxActive(poolMaxSize)
                     .minIdle(poolMinIdle)
+                    .initialSize(druidInitialSize)
+                    .maxWait(druidMaxWait)
+                    .timeBetweenEvictionRunsMillis(druidTimeBetweenEvictionRunsMillis)
+                    .minEvictableIdleTimeMillis(druidMinEvictableIdleTimeMillis)
+                    .validationQuery(druidValidationQuery)
+                    .testWhileIdle(druidTestWhileIdle)
+                    .testOnBorrow(druidTestOnBorrow)
+                    .testOnReturn(druidTestOnReturn)
+                    .keepAlive(druidKeepAlive)
+                    .keepAliveBetweenTimeMillis(druidKeepAliveBetweenTimeMillis)
                     .build();
             System.out.println("✓ Unified demo started with auth=" + normalizedAuthMode + ", pool=druid");
             return new DemoRuntime(normalizedAuthMode, normalizedPoolMode, ds.getRotationDb(), ds, ds);

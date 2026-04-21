@@ -313,7 +313,9 @@ public class DynamicSecretRotationDb implements AutoCloseable {
         closed = true;
 
         if (watchFuture != null) {
-            watchFuture.cancel(false);
+            // 使用 cancel(true) 允许中断正在执行的任务（如 SSM API 网络 I/O），
+            // 确保 close() 后 Watcher 线程能及时停止，避免 Spring Boot 热重启等场景下的线程泄漏
+            watchFuture.cancel(true);
         }
 
         if (scheduler != null && !scheduler.isShutdown()) {

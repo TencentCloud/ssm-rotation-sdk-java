@@ -209,6 +209,33 @@ public class SsmRotationProperties {
         private Boolean testWhileIdle = true;
         private Boolean testOnBorrow = false;
         private Boolean testOnReturn = false;
+        private Boolean keepAlive = true;
+        private Long keepAliveBetweenTimeMillis = 120000L;
+
+        /**
+         * 扩展属性（内部使用）：收集所有 SDK 未显式暴露的 Druid 原生参数。
+         * <p>用户无需使用 extra-properties 层级，直接在 druid 下平级配置即可，例如：</p>
+         * <pre>
+         * ssm.rotation.datasource.druid.max-evictable-idle-time-millis=900000
+         * ssm.rotation.datasource.druid.phy-timeout-millis=0
+         * </pre>
+         * <p>SDK 会自动将未识别的属性收集到此 Map 中，通过反射设置到原生连接池。</p>
+         * <p>同时也兼容显式的 extra-properties 写法（向后兼容）。</p>
+         */
+        private java.util.Map<String, Object> extraProperties = new java.util.LinkedHashMap<>();
+
+        /** SDK 已显式暴露的属性名集合，用于区分已知属性和扩展属性 */
+        private static final java.util.Set<String> KNOWN_FIELDS = java.util.Collections.unmodifiableSet(
+                new java.util.HashSet<>(java.util.Arrays.asList(
+                        "maxActive", "minIdle", "initialSize", "maxWait",
+                        "timeBetweenEvictionRunsMillis", "minEvictableIdleTimeMillis",
+                        "validationQuery", "testWhileIdle", "testOnBorrow", "testOnReturn",
+                        "keepAlive", "keepAliveBetweenTimeMillis", "extraProperties"
+                )));
+
+        public static java.util.Set<String> getKnownFields() {
+            return KNOWN_FIELDS;
+        }
 
         public DruidProperties copy() {
             DruidProperties copy = new DruidProperties();
@@ -222,6 +249,9 @@ public class SsmRotationProperties {
             copy.testWhileIdle = this.testWhileIdle;
             copy.testOnBorrow = this.testOnBorrow;
             copy.testOnReturn = this.testOnReturn;
+            copy.keepAlive = this.keepAlive;
+            copy.keepAliveBetweenTimeMillis = this.keepAliveBetweenTimeMillis;
+            copy.extraProperties = this.extraProperties == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(this.extraProperties);
             return copy;
         }
     }
@@ -236,6 +266,27 @@ public class SsmRotationProperties {
         private String connectionTestQuery = "SELECT 1";
         private String poolName = "SSM-Rotation-HikariPool";
 
+        /**
+         * 扩展属性（内部使用）：收集所有 SDK 未显式暴露的 HikariCP 原生参数。
+         * <p>用户无需使用 extra-properties 层级，直接在 hikari 下平级配置即可，例如：</p>
+         * <pre>
+         * ssm.rotation.datasource.hikari.leak-detection-threshold=60000
+         * </pre>
+         */
+        private java.util.Map<String, Object> extraProperties = new java.util.LinkedHashMap<>();
+
+        /** SDK 已显式暴露的属性名集合 */
+        private static final java.util.Set<String> KNOWN_FIELDS = java.util.Collections.unmodifiableSet(
+                new java.util.HashSet<>(java.util.Arrays.asList(
+                        "maximumPoolSize", "minimumIdle", "connectionTimeout",
+                        "idleTimeout", "maxLifetime", "connectionTestQuery", "poolName",
+                        "extraProperties"
+                )));
+
+        public static java.util.Set<String> getKnownFields() {
+            return KNOWN_FIELDS;
+        }
+
         public HikariProperties copy() {
             HikariProperties copy = new HikariProperties();
             copy.maximumPoolSize = this.maximumPoolSize;
@@ -245,6 +296,7 @@ public class SsmRotationProperties {
             copy.maxLifetime = this.maxLifetime;
             copy.connectionTestQuery = this.connectionTestQuery;
             copy.poolName = this.poolName;
+            copy.extraProperties = this.extraProperties == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(this.extraProperties);
             return copy;
         }
     }
@@ -258,10 +310,35 @@ public class SsmRotationProperties {
         private Long maxWaitMillis = 60000L;
         private Long timeBetweenEvictionRunsMillis = 60000L;
         private Long minEvictableIdleTimeMillis = 300000L;
+        private Long softMinEvictableIdleTimeMillis = 120000L;
         private String validationQuery = "SELECT 1";
         private Boolean testWhileIdle = true;
-        private Boolean testOnBorrow = false;
+        private Boolean testOnBorrow = true;
         private Boolean testOnReturn = false;
+
+        /**
+         * 扩展属性（内部使用）：收集所有 SDK 未显式暴露的 DBCP 原生参数。
+         * <p>用户无需使用 extra-properties 层级，直接在 dbcp 下平级配置即可，例如：</p>
+         * <pre>
+         * ssm.rotation.datasource.dbcp.num-tests-per-eviction-run=3
+         * ssm.rotation.datasource.dbcp.log-abandoned=true
+         * </pre>
+         */
+        private java.util.Map<String, Object> extraProperties = new java.util.LinkedHashMap<>();
+
+        /** SDK 已显式暴露的属性名集合 */
+        private static final java.util.Set<String> KNOWN_FIELDS = java.util.Collections.unmodifiableSet(
+                new java.util.HashSet<>(java.util.Arrays.asList(
+                        "maxTotal", "minIdle", "maxIdle", "initialSize",
+                        "maxWaitMillis", "timeBetweenEvictionRunsMillis",
+                        "minEvictableIdleTimeMillis", "softMinEvictableIdleTimeMillis",
+                        "validationQuery", "testWhileIdle", "testOnBorrow", "testOnReturn",
+                        "extraProperties"
+                )));
+
+        public static java.util.Set<String> getKnownFields() {
+            return KNOWN_FIELDS;
+        }
 
         public DbcpProperties copy() {
             DbcpProperties copy = new DbcpProperties();
@@ -272,10 +349,12 @@ public class SsmRotationProperties {
             copy.maxWaitMillis = this.maxWaitMillis;
             copy.timeBetweenEvictionRunsMillis = this.timeBetweenEvictionRunsMillis;
             copy.minEvictableIdleTimeMillis = this.minEvictableIdleTimeMillis;
+            copy.softMinEvictableIdleTimeMillis = this.softMinEvictableIdleTimeMillis;
             copy.validationQuery = this.validationQuery;
             copy.testWhileIdle = this.testWhileIdle;
             copy.testOnBorrow = this.testOnBorrow;
             copy.testOnReturn = this.testOnReturn;
+            copy.extraProperties = this.extraProperties == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(this.extraProperties);
             return copy;
         }
     }

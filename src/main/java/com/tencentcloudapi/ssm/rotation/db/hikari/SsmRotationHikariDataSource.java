@@ -23,11 +23,13 @@ import com.tencentcloudapi.ssm.rotation.config.DynamicSecretRotationConfig;
 import com.tencentcloudapi.ssm.rotation.db.AbstractSsmRotationDataSource;
 import com.tencentcloudapi.ssm.rotation.db.CredentialChangeListener;
 import com.tencentcloudapi.ssm.rotation.db.DynamicSecretRotationDb;
+import com.tencentcloudapi.ssm.rotation.db.ExtraPropertiesApplier;
 import com.tencentcloudapi.ssm.rotation.ssm.DbAccount;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.sql.DataSource;
 import java.sql.SQLException;
+import java.util.Map;
 
 /**
  * 基于 HikariCP 连接池的 SSM 凭据轮转数据源
@@ -112,6 +114,11 @@ public class SsmRotationHikariDataSource extends AbstractSsmRotationDataSource<H
         private String poolName = "SSM-Rotation-HikariPool";
 
         /**
+         * 扩展属性：用于设置 SDK 未显式暴露的 HikariCP 原生参数
+         */
+        private java.util.Map<String, Object> extraProperties;
+
+        /**
          * 高级模式：用户自定义的 HikariConfig
          */
         private HikariConfig customHikariConfig;
@@ -179,6 +186,17 @@ public class SsmRotationHikariDataSource extends AbstractSsmRotationDataSource<H
         }
 
         /**
+         * 设置扩展属性，用于配置 SDK 未显式暴露的 HikariCP 原生参数
+         *
+         * <p>通过此方法可以设置任意 HikariCP 支持的参数，无需等待 SDK 升级。
+         * 例如：leakDetectionThreshold、registerMbeans 等。</p>
+         */
+        public Builder extraProperties(java.util.Map<String, Object> extraProperties) {
+            this.extraProperties = extraProperties;
+            return this;
+        }
+
+        /**
          * 高级模式：传入自定义的 HikariConfig
          * 
          * <p>SDK 会自动设置 jdbcUrl、username、password，其他配置由用户自行控制。</p>
@@ -214,6 +232,9 @@ public class SsmRotationHikariDataSource extends AbstractSsmRotationDataSource<H
                 hikariConfig.setMaxLifetime(maxLifetime);
                 hikariConfig.setConnectionTestQuery(connectionTestQuery);
                 hikariConfig.setPoolName(poolName);
+
+                // 应用扩展属性：通过反射调用 HikariConfig 原生 setter，支持用户配置 SDK 未显式暴露的参数
+                ExtraPropertiesApplier.apply(hikariConfig, extraProperties);
             }
 
             // 设置连接信息（无论哪种模式都由 SDK 管理）
@@ -270,8 +291,9 @@ public class SsmRotationHikariDataSource extends AbstractSsmRotationDataSource<H
                     oldAccount.getUserName(), newAccount.getUserName());
 
             // 1. 更新 HikariCP 的用户名和密码
-            hikariDataSource.setUsername(newAccount.getUserName());
+            // 先更新 password 再更新 username，缩短非原子更新的不一致窗口
             hikariDataSource.setPassword(newAccount.getPassword());
+            hikariDataSource.setUsername(newAccount.getUserName());
 
             // 2. 软淘汰旧连接
             // HikariCP 的 softEvictConnections 会标记所有当前连接为待淘汰
@@ -295,4 +317,5 @@ public class SsmRotationHikariDataSource extends AbstractSsmRotationDataSource<H
             }
         }
     }
+
 }

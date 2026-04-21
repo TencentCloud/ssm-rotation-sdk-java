@@ -23,12 +23,14 @@ import com.tencentcloudapi.ssm.rotation.config.DynamicSecretRotationConfig;
 import com.tencentcloudapi.ssm.rotation.db.AbstractSsmRotationDataSource;
 import com.tencentcloudapi.ssm.rotation.db.CredentialChangeListener;
 import com.tencentcloudapi.ssm.rotation.db.DynamicSecretRotationDb;
+import com.tencentcloudapi.ssm.rotation.db.ExtraPropertiesApplier;
 import com.tencentcloudapi.ssm.rotation.ssm.DbAccount;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Field;
 import java.sql.SQLException;
+import java.util.Map;
 
 /**
  * 基于 Druid 连接池的 SSM 凭据轮转数据源
@@ -137,6 +139,16 @@ public class SsmRotationDruidDataSource extends AbstractSsmRotationDataSource<Dr
         private boolean testWhileIdle = true;
         private boolean testOnBorrow = false;
         private boolean testOnReturn = false;
+        private boolean keepAlive = true;
+        private long keepAliveBetweenTimeMillis = 120000;
+
+        /**
+         * 扩展属性：用于设置 SDK 未显式暴露的 Druid 原生参数
+         * <p>key 为 Druid setter 方法名去掉 "set" 前缀后首字母小写的属性名，
+         * 例如 "maxEvictableIdleTimeMillis"、"phyTimeoutMillis" 等。</p>
+         * <p>显式参数（如 maxActive、minIdle 等）优先级高于 extraProperties 中的同名配置。</p>
+         */
+        private java.util.Map<String, Object> extraProperties;
 
         /**
          * 高级模式：用户自定义的 DruidDataSource
@@ -235,6 +247,40 @@ public class SsmRotationDruidDataSource extends AbstractSsmRotationDataSource<Dr
         }
 
         /**
+         * 设置是否开启连接保活，默认 true
+         * 
+         * <p>开启后，Druid 会定期对 minIdle 以内的空闲连接进行保活探测，
+         * 防止因 MySQL wait_timeout 超时导致连接被服务端断开。</p>
+         */
+        public Builder keepAlive(boolean keepAlive) {
+            this.keepAlive = keepAlive;
+            return this;
+        }
+
+        /**
+         * 设置保活检测间隔时间（毫秒），默认 120000（2分钟）
+         * 
+         * <p>仅在 keepAlive=true 时生效。建议设置为小于 MySQL wait_timeout 的值。</p>
+         */
+        public Builder keepAliveBetweenTimeMillis(long keepAliveBetweenTimeMillis) {
+            this.keepAliveBetweenTimeMillis = keepAliveBetweenTimeMillis;
+            return this;
+        }
+
+        /**
+         * 设置扩展属性，用于配置 SDK 未显式暴露的 Druid 原生参数
+         *
+         * <p>通过此方法可以设置任意 Druid 支持的参数，无需等待 SDK 升级。
+         * 例如：maxEvictableIdleTimeMillis、phyTimeoutMillis、removeAbandoned 等。</p>
+         *
+         * @param extraProperties 扩展属性 Map，key 为属性名，value 为属性值
+         */
+        public Builder extraProperties(java.util.Map<String, Object> extraProperties) {
+            this.extraProperties = extraProperties;
+            return this;
+        }
+
+        /**
          * 高级模式：传入自定义的 DruidDataSource
          * 
          * <p>如果设置了此项，Builder 中的 Druid 参数（maxActive、minIdle 等）将被忽略。
@@ -285,6 +331,11 @@ public class SsmRotationDruidDataSource extends AbstractSsmRotationDataSource<Dr
                 druid.setTestWhileIdle(testWhileIdle);
                 druid.setTestOnBorrow(testOnBorrow);
                 druid.setTestOnReturn(testOnReturn);
+                druid.setKeepAlive(keepAlive);
+                druid.setKeepAliveBetweenTimeMillis(keepAliveBetweenTimeMillis);
+
+                // 应用扩展属性：通过反射调用 Druid 原生 setter，支持用户配置 SDK 未显式暴露的参数
+                ExtraPropertiesApplier.apply(druid, extraProperties);
             }
 
             // 设置连接信息（无论哪种模式都由 SDK 管理）
@@ -378,9 +429,18 @@ public class SsmRotationDruidDataSource extends AbstractSsmRotationDataSource<Dr
          * 如果新值与旧值不同会抛出 {@code UnsupportedOperationException}。
          * 而 {@code setPassword()} 在 {@code inited=true} 后仅打印日志并正常赋值。
          * 为保持一致性和兼容性，username 通过反射修改，password 直接调用 setter。</p>
+         *
+         * <p><b>更新顺序说明：</b>先更新 password 再更新 username。
+         * 由于 username 和 password 的更新不是原子操作，中间存在短暂的时间窗口。
+         * 先更新 password（简单 setter 赋值，速度快），再更新 username（反射操作，相对较慢），
+         * 可以最大限度缩短不一致窗口。即使在窗口期内有新连接创建，
+         * 组合为「旧username + 新password」，连接池会自动重试，不会影响服务可用性。</p>
          */
         private static void updateDruidCredential(DruidDataSource dataSource, String username, String password) {
-            // 更新 username：通过反射绕过 inited 检查
+            // 先更新 password：Druid 允许 init 后直接调用 setPassword，操作快速
+            dataSource.setPassword(password);
+
+            // 再更新 username：通过反射绕过 inited 检查，操作相对较慢
             try {
                 Field usernameField = DruidAbstractDataSource.class.getDeclaredField("username");
                 usernameField.setAccessible(true);
@@ -395,9 +455,7 @@ public class SsmRotationDruidDataSource extends AbstractSsmRotationDataSource<Dr
                     throw new RuntimeException("Failed to update Druid username after credential rotation", ex);
                 }
             }
-
-            // 更新 password：Druid 允许 init 后直接调用 setPassword
-            dataSource.setPassword(password);
         }
     }
+
 }

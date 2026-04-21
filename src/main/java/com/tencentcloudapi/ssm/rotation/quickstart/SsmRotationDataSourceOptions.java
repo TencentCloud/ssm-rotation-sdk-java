@@ -96,6 +96,19 @@ public class SsmRotationDataSourceOptions {
         private boolean testOnBorrow = false;
         @Builder.Default
         private boolean testOnReturn = false;
+        @Builder.Default
+        private boolean keepAlive = true;
+        @Builder.Default
+        private long keepAliveBetweenTimeMillis = 120000L;
+
+        /**
+         * 扩展属性：用于设置 SDK 未显式暴露的 Druid 原生参数。
+         * <p>key 为 Druid setter 方法名去掉 "set" 前缀后首字母小写的属性名，
+         * 例如 "maxEvictableIdleTimeMillis"、"phyTimeoutMillis" 等。</p>
+         * <p>显式参数（如 maxActive、minIdle 等）优先级高于 extraProperties 中的同名配置。</p>
+         */
+        @Builder.Default
+        private java.util.Map<String, Object> extraProperties = new java.util.LinkedHashMap<>();
     }
 
     @Getter
@@ -117,6 +130,13 @@ public class SsmRotationDataSourceOptions {
         private String connectionTestQuery = "SELECT 1";
         @Builder.Default
         private String poolName = "SSM-Rotation-HikariPool";
+
+        /**
+         * 扩展属性：用于设置 SDK 未显式暴露的 HikariCP 原生参数。
+         * <p>key 为 HikariConfig 的属性名，例如 "leakDetectionThreshold"、"registerMbeans" 等。</p>
+         */
+        @Builder.Default
+        private java.util.Map<String, Object> extraProperties = new java.util.LinkedHashMap<>();
     }
 
     @Getter
@@ -139,12 +159,21 @@ public class SsmRotationDataSourceOptions {
         @Builder.Default
         private long minEvictableIdleTimeMillis = 300000L;
         @Builder.Default
+        private long softMinEvictableIdleTimeMillis = 120000L;
+        @Builder.Default
         private String validationQuery = "SELECT 1";
         @Builder.Default
         private boolean testWhileIdle = true;
         @Builder.Default
-        private boolean testOnBorrow = false;
+        private boolean testOnBorrow = true;
         @Builder.Default
         private boolean testOnReturn = false;
+
+        /**
+         * 扩展属性：用于设置 SDK 未显式暴露的 DBCP 原生参数。
+         * <p>key 为 BasicDataSource 的属性名，例如 "numTestsPerEvictionRun"、"logAbandoned" 等。</p>
+         */
+        @Builder.Default
+        private java.util.Map<String, Object> extraProperties = new java.util.LinkedHashMap<>();
     }
 }

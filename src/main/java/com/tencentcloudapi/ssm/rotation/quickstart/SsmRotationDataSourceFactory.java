@@ -146,6 +146,9 @@ public final class SsmRotationDataSourceFactory {
                 .testWhileIdle(druidOptions.isTestWhileIdle())
                 .testOnBorrow(druidOptions.isTestOnBorrow())
                 .testOnReturn(druidOptions.isTestOnReturn())
+                .keepAlive(druidOptions.isKeepAlive())
+                .keepAliveBetweenTimeMillis(druidOptions.getKeepAliveBetweenTimeMillis())
+                .extraProperties(druidOptions.getExtraProperties())
                 .build();
     }
 
@@ -165,6 +168,7 @@ public final class SsmRotationDataSourceFactory {
                 .maxLifetime(hikariOptions.getMaxLifetime())
                 .connectionTestQuery(hikariOptions.getConnectionTestQuery())
                 .poolName(hikariOptions.getPoolName())
+                .extraProperties(hikariOptions.getExtraProperties())
                 .build();
     }
 
@@ -184,10 +188,12 @@ public final class SsmRotationDataSourceFactory {
                 .maxWaitMillis(dbcpOptions.getMaxWaitMillis())
                 .timeBetweenEvictionRunsMillis(dbcpOptions.getTimeBetweenEvictionRunsMillis())
                 .minEvictableIdleTimeMillis(dbcpOptions.getMinEvictableIdleTimeMillis())
+                .softMinEvictableIdleTimeMillis(dbcpOptions.getSoftMinEvictableIdleTimeMillis())
                 .validationQuery(dbcpOptions.getValidationQuery())
                 .testWhileIdle(dbcpOptions.isTestWhileIdle())
                 .testOnBorrow(dbcpOptions.isTestOnBorrow())
                 .testOnReturn(dbcpOptions.isTestOnReturn())
+                .extraProperties(dbcpOptions.getExtraProperties())
                 .build();
     }
 }

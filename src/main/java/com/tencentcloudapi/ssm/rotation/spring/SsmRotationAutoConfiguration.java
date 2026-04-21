@@ -32,10 +32,14 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.EnumerablePropertySource;
+import org.springframework.core.env.PropertySource;
 
 import javax.sql.DataSource;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * SSM Rotation Spring Boot 自动装配
@@ -48,12 +52,20 @@ import java.util.Map;
 @ConditionalOnProperty(prefix = "ssm.rotation", name = "enabled", havingValue = "true")
 public class SsmRotationAutoConfiguration {
 
+    private final ConfigurableEnvironment environment;
+
+    public SsmRotationAutoConfiguration(ConfigurableEnvironment environment) {
+        this.environment = environment;
+    }
+
     @Bean(name = "dataSource")
     @Primary
     @ConditionalOnMissingBean(DataSource.class)
     @ConditionalOnProperty(prefix = "ssm.rotation", name = "mode", havingValue = "single", matchIfMissing = true)
     public DataSource ssmRotationSingleDataSource(SsmRotationProperties properties) throws SsmRotationException {
         SsmRotationProperties.DataSourceProperties dataSource = properties.resolveSingleDataSource();
+        // 自动收集配置文件中平级的未知属性到 extraProperties
+        collectExtraProperties(dataSource, "ssm.rotation.datasource");
         SsmRotationDataSourceOptions options = toOptions(properties, dataSource);
         DataSource created = SsmRotationDataSourceFactory.createDataSource(options);
         log.info("SSM rotation single datasource initialized, beanName=dataSource, poolType={}",
@@ -87,6 +99,8 @@ public class SsmRotationAutoConfiguration {
                     primaryKey = key;
                 }
 
+                // 自动收集配置文件中平级的未知属性到 extraProperties
+                collectExtraProperties(value, "ssm.rotation.datasources." + key);
                 SsmRotationDataSourceOptions options = toOptions(properties, value);
                 dataSourceMap.put(key, SsmRotationDataSourceFactory.createDataSource(options));
             }
@@ -190,6 +204,9 @@ public class SsmRotationAutoConfiguration {
                 .testWhileIdle(valueOrDefault(source.getTestWhileIdle(), true))
                 .testOnBorrow(valueOrDefault(source.getTestOnBorrow(), false))
                 .testOnReturn(valueOrDefault(source.getTestOnReturn(), false))
+                .keepAlive(valueOrDefault(source.getKeepAlive(), true))
+                .keepAliveBetweenTimeMillis(valueOrDefault(source.getKeepAliveBetweenTimeMillis(), 120000L))
+                .extraProperties(source.getExtraProperties() == null ? new java.util.LinkedHashMap<>() : source.getExtraProperties())
                 .build();
     }
 
@@ -206,6 +223,7 @@ public class SsmRotationAutoConfiguration {
                 .maxLifetime(valueOrDefault(source.getMaxLifetime(), 1800000L))
                 .connectionTestQuery(valueOrDefault(source.getConnectionTestQuery(), "SELECT 1"))
                 .poolName(valueOrDefault(source.getPoolName(), "SSM-Rotation-HikariPool"))
+                .extraProperties(source.getExtraProperties() == null ? new java.util.LinkedHashMap<>() : source.getExtraProperties())
                 .build();
     }
 
@@ -222,14 +240,128 @@ public class SsmRotationAutoConfiguration {
                 .maxWaitMillis(valueOrDefault(source.getMaxWaitMillis(), 60000L))
                 .timeBetweenEvictionRunsMillis(valueOrDefault(source.getTimeBetweenEvictionRunsMillis(), 60000L))
                 .minEvictableIdleTimeMillis(valueOrDefault(source.getMinEvictableIdleTimeMillis(), 300000L))
+                .softMinEvictableIdleTimeMillis(valueOrDefault(source.getSoftMinEvictableIdleTimeMillis(), 120000L))
                 .validationQuery(valueOrDefault(source.getValidationQuery(), "SELECT 1"))
                 .testWhileIdle(valueOrDefault(source.getTestWhileIdle(), true))
-                .testOnBorrow(valueOrDefault(source.getTestOnBorrow(), false))
+                .testOnBorrow(valueOrDefault(source.getTestOnBorrow(), true))
                 .testOnReturn(valueOrDefault(source.getTestOnReturn(), false))
+                .extraProperties(source.getExtraProperties() == null ? new java.util.LinkedHashMap<>() : source.getExtraProperties())
                 .build();
     }
 
     private <T> T valueOrDefault(T value, T defaultValue) {
         return value == null ? defaultValue : value;
+    }
+
+    // ==================== 自动收集未知属性 ====================
+
+    /**
+     * 从 Spring Environment 中自动收集连接池配置下未被 SDK 显式字段匹配的属性，
+     * 放入对应 Properties 的 extraProperties 中。
+     *
+     * <p>这样用户可以直接在 druid/hikari/dbcp 下平级配置任意原生参数，
+     * 无需使用 extra-properties 层级，降低理解成本。例如：</p>
+     * <pre>
+     * ssm.rotation.datasource.druid.max-evictable-idle-time-millis=900000
+     * ssm.rotation.datasource.druid.phy-timeout-millis=0
+     * </pre>
+     *
+     * <p>同时也兼容显式的 extra-properties 写法（向后兼容）。</p>
+     */
+    private void collectExtraProperties(SsmRotationProperties.DataSourceProperties ds, String prefix) {
+        if (ds == null) {
+            return;
+        }
+        collectPoolExtraProperties(ds.getDruid(), prefix + ".druid",
+                SsmRotationProperties.DruidProperties.getKnownFields());
+        collectPoolExtraProperties(ds.getHikari(), prefix + ".hikari",
+                SsmRotationProperties.HikariProperties.getKnownFields());
+        collectPoolExtraProperties(ds.getDbcp(), prefix + ".dbcp",
+                SsmRotationProperties.DbcpProperties.getKnownFields());
+    }
+
+    /**
+     * 从 Environment 中收集指定前缀下的未知属性
+     *
+     * @param poolProps  连接池 Properties 对象
+     * @param prefix     配置前缀，如 "ssm.rotation.datasource.druid"
+     * @param knownFields SDK 已显式暴露的字段名集合
+     */
+    private void collectPoolExtraProperties(Object poolProps, String prefix, Set<String> knownFields) {
+        if (poolProps == null) {
+            return;
+        }
+
+        // 获取 extraProperties Map
+        Map<String, Object> extraProperties;
+        if (poolProps instanceof SsmRotationProperties.DruidProperties) {
+            extraProperties = ((SsmRotationProperties.DruidProperties) poolProps).getExtraProperties();
+        } else if (poolProps instanceof SsmRotationProperties.HikariProperties) {
+            extraProperties = ((SsmRotationProperties.HikariProperties) poolProps).getExtraProperties();
+        } else if (poolProps instanceof SsmRotationProperties.DbcpProperties) {
+            extraProperties = ((SsmRotationProperties.DbcpProperties) poolProps).getExtraProperties();
+        } else {
+            return;
+        }
+
+        String dotPrefix = prefix + ".";
+        String extraPrefix = prefix + ".extra-properties.";
+
+        for (PropertySource<?> propertySource : environment.getPropertySources()) {
+            if (!(propertySource instanceof EnumerablePropertySource)) {
+                continue;
+            }
+            for (String key : ((EnumerablePropertySource<?>) propertySource).getPropertyNames()) {
+                // 跳过 extra-properties 下的属性（已由 Spring Boot 自动绑定到 extraProperties Map）
+                if (key.startsWith(extraPrefix)) {
+                    continue;
+                }
+                if (!key.startsWith(dotPrefix)) {
+                    continue;
+                }
+                // 提取属性名（去掉前缀），只处理直接子属性，不处理嵌套属性
+                String remainder = key.substring(dotPrefix.length());
+                if (remainder.contains(".")) {
+                    continue;
+                }
+
+                // 将 kebab-case 转换为 camelCase
+                String camelCaseName = kebabToCamelCase(remainder);
+
+                // 跳过 SDK 已显式暴露的字段
+                if (knownFields.contains(camelCaseName)) {
+                    continue;
+                }
+
+                // 收集到 extraProperties（不覆盖已有值，显式 extra-properties 优先）
+                if (!extraProperties.containsKey(camelCaseName)) {
+                    Object value = environment.getProperty(key);
+                    if (value != null) {
+                        extraProperties.put(camelCaseName, value);
+                        log.debug("Collected extra pool property: {} = {}", camelCaseName, value);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 将 kebab-case（如 max-evictable-idle-time-millis）转换为 camelCase（如 maxEvictableIdleTimeMillis）
+     */
+    private static String kebabToCamelCase(String kebab) {
+        if (kebab == null || !kebab.contains("-")) {
+            return kebab;
+        }
+        StringBuilder sb = new StringBuilder();
+        boolean nextUpper = false;
+        for (char c : kebab.toCharArray()) {
+            if (c == '-') {
+                nextUpper = true;
+            } else {
+                sb.append(nextUpper ? Character.toUpperCase(c) : c);
+                nextUpper = false;
+            }
+        }
+        return sb.toString();
     }
 }
