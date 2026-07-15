@@ -54,7 +54,7 @@ Java 8 及以上版本（CI 在 JDK 8 / 11 / 17 / 21 上持续验证）
 <dependency>
     <groupId>com.tencentcloudapi</groupId>
     <artifactId>ssm-rotation-sdk-java</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 
@@ -74,7 +74,7 @@ Java 8 及以上版本（CI 在 JDK 8 / 11 / 17 / 21 上持续验证）
 
 ```java
 import com.tencentcloudapi.ssm.rotation.*;
-import com.tencentcloudapi.ssm.rotation.datasource.SsmRotationHikariDataSource;
+import com.tencentcloudapi.ssm.rotation.db.hikari.SsmRotationHikariDataSource;
 
 // 1. SSM 账号配置（三选一）
 
@@ -331,7 +331,7 @@ ssm-rotation-sdk-java/
 │   ├── SsmAccount.java                       # SSM 账号配置
 │   ├── SsmRotationException.java             # 统一异常
 │   ├── SsmRotationQuickStart.java            # 快速接入工具类
-│   ├── datasource/                           # 连接池数据源封装
+│   ├── db/                                  # 连接池数据源封装
 │   │   ├── SsmRotationHikariDataSource.java
 │   │   ├── SsmRotationDruidDataSource.java
 │   │   └── SsmRotationDbcpDataSource.java

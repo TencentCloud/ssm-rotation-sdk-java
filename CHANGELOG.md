@@ -5,6 +5,13 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] - 2026-07-15
+
+### 文档
+
+- **README import 路径修正**：示例代码中 `com.tencentcloudapi.ssm.rotation.datasource` 包路径错误，实际为 `com.tencentcloudapi.ssm.rotation.db.hikari`
+- **README 目录结构修正**：项目结构树中连接池封装目录名 `datasource` 应为 `db`
+
 ## [1.0.1] - 2026-04-16
 
 ### 修复
