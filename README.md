@@ -54,7 +54,7 @@ Java 8 及以上版本（CI 在 JDK 8 / 11 / 17 / 21 上持续验证）
 <dependency>
     <groupId>com.tencentcloudapi</groupId>
     <artifactId>ssm-rotation-sdk-java</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
