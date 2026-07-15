@@ -30,4 +30,4 @@ jobs:
           cache: maven
 
       - name: Build and test
-        run: mvn -B -ntp clean verify
+        run: mvn -B -ntp clean verify -Dgpg.skip=true
